@@ -1,0 +1,84 @@
+/* MAIN CONTENT */
+.main-content {
+    padding: 16px;
+    max-width: 70%;
+}
+
+.teacher-video {
+    width: 100%;
+    margin-top: 12px;
+}
+
+.start-btn {
+    margin-top: 12px;
+    padding: 8px 14px;
+    font-weight: bold;
+    background: #4caf50;
+    color: #fff;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+}
+
+/* RIGHT SIDE PANEL */
+.right-panel {
+    position: fixed;
+    top: 80px;
+    right: 16px;
+    width: 320px;
+    max-height: 80vh;
+    background: #f9fafb;
+    padding: 14px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    overflow-y: auto;
+    z-index: 999;
+}
+
+/* STUDENT DOUBT */
+.doubt-box {
+    margin-bottom: 16px;
+    padding: 10px;
+    background: #f4f6f8;
+    border-left: 4px solid #4caf50;
+    border-radius: 6px;
+}
+
+/* AI ANSWER */
+.ai-box {
+    padding: 10px;
+    background: #e8f5e9;
+    border-left: 4px solid #2e7d32;
+    border-radius: 6px;
+}
+
+/* VIDEO SLIDE CONTAINER */
+.video-slide {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    border: 4px solid #fff;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.video-slide video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.right-panel button {
+    margin-top: 6px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+}
+
+

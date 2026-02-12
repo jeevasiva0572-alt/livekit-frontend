@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket Test</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Socket.io Connection Test</h1>
+    <div id="status">Connecting...</div>
+    <button id="createBtn">Create Meeting for Later</button>
+    <div id="result"></div>
+
+    <script>
+        const socket = io('http://localhost:3001');
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const createBtn = document.getElementById('createBtn');
+
+        socket.on('connect', () => {
+            statusDiv.textContent = '✅ Connected! Socket ID: ' + socket.id;
+            statusDiv.style.color = 'green';
+        });
+
+        socket.on('connect_error', (error) => {
+            statusDiv.textContent = '❌ Connection Error: ' + error.message;
+            statusDiv.style.color = 'red';
+        });
+
+        socket.on('join_approved', (data) => {
+            console.log('Received join_approved:', data);
+            resultDiv.innerHTML = `
+                <h3>Meeting Created!</h3>
+                <p>Room: ${data.room}</p>
+                <p>Password: ${data.password || 'N/A'}</p>
+                <p>Token: ${data.token ? 'Yes ✓' : 'No ✗'}</p>
+                <p>URL: ${data.url || 'N/A'}</p>
+            `;
+        });
+
+        createBtn.addEventListener('click', () => {
+            const room = 'test-' + Math.random().toString(36).substring(2, 9);
+            console.log('Emitting join_request for room:', room);
+            socket.emit('join_request', {
+                room: room,
+                name: 'TestUser',
+                role: 'teacher'
+            });
+            resultDiv.textContent = 'Waiting for response...';
+        });
+    </script>
+</body>
+</html>
