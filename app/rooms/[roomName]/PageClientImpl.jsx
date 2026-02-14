@@ -459,13 +459,19 @@ function RoomContent({
     useMeetGridLayout(gridWrapperRef);
 
     useEffect(() => {
-        if (!room || userRole !== 'teacher') return;
+        if (!room || userRole?.toLowerCase() !== 'teacher') return;
         publisherRef.current = new TeacherVideoPublisher(room);
+
+        // Host notification (One time only)
+        toast('You are Host', {
+            duration: 3000,
+            position: 'top-center'
+        });
     }, [room, userRole]);
 
     // Listen for doubts and hand raises centrally
     useEffect(() => {
-        if (!room || userRole !== 'teacher') return;
+        if (!room) return;
 
         const handleData = (payload, participant) => {
             try {
@@ -477,17 +483,38 @@ function RoomContent({
                     setAiAnswer('');
 
                     // speakText(`${senderName} says: ${msg.text}`);
+                    toast(
+                        (t) => (
+                            <div
+                                style={{
+                                    maxWidth: '300px',
+                                    maxHeight: '120px',
+                                    overflowY: 'auto',
+                                    wordBreak: 'break-word',
+                                    overflowWrap: 'break-word',
+                                    whiteSpace: 'pre-wrap',
+                                }}
+                            >
+                                <strong style={{ display: 'block', marginBottom: '6px' }}>
+                                    ❓ Doubt from {senderName}
+                                </strong>
+                                <span style={{ fontSize: '14px', lineHeight: '1.4' }}>
+                                    {msg.text}
+                                </span>
+                            </div>
+                        ),
+                        {
+                            style: {
+                                borderRadius: '12px',
+                                background: '#1e1e1e',
+                                color: '#fff',
+                                border: '1px solid #8ab4f8',
+                                padding: '12px',
+                            },
+                            duration: 5000,
+                        }
+                    );
 
-                    toast(`Doubt from ${senderName}: ${msg.text}`, {
-                        icon: '❓',
-                        style: {
-                            borderRadius: '10px',
-                            background: '#333',
-                            color: '#fff',
-                            border: '1px solid #8ab4f8',
-                        },
-                        duration: 4000,
-                    });
                 }
 
                 if (msg.action === 'HAND_RAISE' && msg.raised) {
@@ -514,12 +541,6 @@ function RoomContent({
         room.on('dataReceived', handleData);
 
         const handleParticipantConnected = (participant) => {
-            toast.success(`${participant.identity} joined`, {
-                duration: 5000,
-                position: 'top-center',
-                style: { border: '1px solid #4ade80' },
-            });
-
             let role = 'student';
             try {
                 if (participant.metadata) {
@@ -528,8 +549,23 @@ function RoomContent({
                 }
             } catch (e) { }
 
+            // If a teacher joins, notify everyone (especially students)
+            if (role === 'teacher') {
+                toast.success('Teacher Active', {
+                    duration: 5000,
+                    position: 'top-center',
+                    // icon: '👨‍🏫',
+                });
+            } else {
+                toast.success(`${participant.identity} joined`, {
+                    duration: 5000,
+                    position: 'top-center',
+                    style: { border: '1px solid #4ade80' },
+                });
+            }
+
             setActiveParticipants((prev) => {
-                const list = Array.isArray(prev) ? prev : [];
+                const list = prev || [];
                 if (list.some((p) => p.name === participant.identity)) return list;
                 return [...list, { name: participant.identity, role, id: participant.sid || Date.now() }];
             });
@@ -542,17 +578,16 @@ function RoomContent({
                 style: { border: '1px solid #f87171' },
             });
 
-            setActiveParticipants((prev) => (Array.isArray(prev) ? prev : []).filter((p) => p.name !== participant.identity));
+            setActiveParticipants((prev) => (prev || []).filter((p) => p.name !== participant.identity));
         };
 
         room.on('participantConnected', handleParticipantConnected);
         room.on('participantDisconnected', handleParticipantDisconnected);
 
-        toast('Teacher Active ', {
-            icon: '',
-            duration: 3000,
-            position: 'top-center',
-        });
+        // Teacher-only listeners moved down
+        if (userRole?.toLowerCase() === 'teacher') {
+            room.on('dataReceived', handleData);
+        }
 
         return () => {
             room.off('dataReceived', handleData);
@@ -571,15 +606,31 @@ function RoomContent({
     }, [videoFile]);
 
     const startClass = async () => {
-        if (!videoRef.current || publishedRef.current) return;
+        if (!videoRef.current || !room || !publisherRef.current) return;
         if (!window.confirm('Do you want to start the class now?')) return;
-        setClassStarted(true);
+
+        try {
+            // Force cleanup of any old tracks before publishing new ones
+            await publisherRef.current.stopPublishing();
+            publishedRef.current = false;
+
+            setClassStarted(true);
+        } catch (e) {
+            console.error('Failed to prepare for class start:', e);
+        }
     };
 
     const publishVideo = async () => {
         if (!videoRef.current || !room || !publisherRef.current) return;
         try {
+            console.log('🎬 Attempting to publish video...');
             await new Promise((r) => setTimeout(r, 150));
+
+            // Double check cleanup
+            if (publishedRef.current) {
+                await publisherRef.current.stopPublishing();
+            }
+
             await publisherRef.current.publishVideo(videoRef.current);
             publishedRef.current = true;
 
@@ -587,15 +638,17 @@ function RoomContent({
                 new TextEncoder().encode(
                     JSON.stringify({
                         action: 'VIDEO_START',
-                        duration: videoRef.current.duration,
+                        duration: videoRef.current.duration || 0,
                     }),
                 ),
                 { reliable: true },
             );
 
             socket.emit('presentation_start', { room: room.name });
+            console.log('✅ Video published successfully');
         } catch (e) {
             console.error('❌ Failed to publish video:', e);
+            publishedRef.current = false;
         }
     };
 
@@ -651,15 +704,27 @@ function RoomContent({
     }, [classStarted, videoURL, room]);
 
     const stopClass = async () => {
-        if (!classStarted) return;
-        await publisherRef.current.stopPublishing();
-        publishedRef.current = false;
-        if (videoRef.current) videoRef.current.pause();
-        room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ action: 'VIDEO_STOP' })), {
-            reliable: true,
-        });
-        socket.emit('presentation_stop', { room: room.name });
-        setClassStarted(false);
+        if (!classStarted || !room || !publisherRef.current) return;
+        console.log('🛑 Stopping class...');
+        try {
+            await publisherRef.current.stopPublishing();
+            publishedRef.current = false;
+
+            if (videoRef.current) {
+                videoRef.current.pause();
+                videoRef.current.currentTime = 0;
+            }
+
+            room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ action: 'VIDEO_STOP' })), {
+                reliable: true,
+            });
+
+            socket.emit('presentation_stop', { room: room.name });
+            setClassStarted(false);
+            console.log('✅ Class stopped');
+        } catch (e) {
+            console.error('Failed to stop class:', e);
+        }
     };
 
     // 🕒 PERIODIC TIME SYNC (Teacher side)

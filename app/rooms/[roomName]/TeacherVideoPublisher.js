@@ -8,6 +8,8 @@ export class TeacherVideoPublisher {
     }
 
     async publishVideo(videoElement) {
+         //refresh page,student receives fresh track
+        await this.stopPublishing();
         const captureFn = videoElement.captureStream || videoElement.mozCaptureStream;
         if (!captureFn) {
             throw new Error('captureStream() not supported in this browser');
