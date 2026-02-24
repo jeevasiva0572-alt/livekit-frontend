@@ -2,13 +2,13 @@
 import { useState } from 'react';
 import { useRoomContext } from '@livekit/components-react';
 import { HiOutlineHandRaised } from 'react-icons/hi2';
- 
+
 export default function StudentHandRaise({ isHandRaised, onToggle }) {
     const room = useRoomContext();
- 
+
     const toggleHandRaise = async () => {
         if (!room?.localParticipant) return;
- 
+
         await room.localParticipant.publishData(
             new TextEncoder().encode(
                 JSON.stringify({
@@ -21,10 +21,10 @@ export default function StudentHandRaise({ isHandRaised, onToggle }) {
             ),
             { reliable: true }
         );
- 
+
         onToggle();
     };
- 
+
     return (
         <button
             onClick={toggleHandRaise}

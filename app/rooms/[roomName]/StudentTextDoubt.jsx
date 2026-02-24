@@ -50,7 +50,7 @@ export default function StudentTextDoubt() {
                 onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
                 onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
             >
-               <FiEdit size={18} />
+                <FiEdit size={18} />
                 Ask a Doubt
             </button>
 
