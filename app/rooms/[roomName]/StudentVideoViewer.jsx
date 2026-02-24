@@ -13,20 +13,15 @@ export default function StudentVideoPanel() {
     const [teacherParticipant, setTeacherParticipant] = useState(null);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
-    const [isFullscreen, setIsFullscreen] = useState(false);
     const [showTeacherVideo, setShowTeacherVideo] = useState(false);
     const [videoTrack, setVideoTrack] = useState(null);
 
     /* ---------------- FIND TEACHER ---------------- */
     useEffect(() => {
         const teacher = remoteParticipants.find(p => {
-            try {
-                return JSON.parse(p.metadata || '{}').role === 'teacher';
-            } catch {
-                return false;
-            }
+            try { return JSON.parse(p.metadata || '{}').role === 'teacher'; }
+            catch { return false; }
         });
-
         setTeacherParticipant(teacher || null);
     }, [remoteParticipants]);
 
@@ -38,17 +33,27 @@ export default function StudentVideoPanel() {
             return;
         }
 
+        const isLessonVideoTrack = (track) => {
+            if (track.kind !== Track.Kind.Video) return false;
+            // ✅ The custom captureStream track is NOT from the camera.
+            // Camera tracks have source === Camera; our captureStream track = Unknown.
+            // Also accept by name as a secondary check.
+            const bySource = track.source !== Track.Source.Camera;
+            const byName = track.name === 'teacher-video';
+            console.log(`🔍 Video track — source: ${track.source}, name: "${track.name}", bySource: ${bySource}, byName: ${byName}`);
+            return bySource || byName;
+        };
+
         const handleTrackSubscribed = (track) => {
-            if (track.kind === Track.Kind.Video) {
-                console.log('🎥 Teacher video track subscribed');
+            if (isLessonVideoTrack(track)) {
+                console.log('🎥 Lesson video track subscribed — setting videoTrack');
                 setVideoTrack(track);
-                setShowTeacherVideo(true);
             }
         };
 
         const handleTrackUnsubscribed = (track) => {
-            if (track.kind === Track.Kind.Video) {
-                console.log('❌ Teacher video track unsubscribed');
+            if (isLessonVideoTrack(track)) {
+                console.log('❌ Lesson video track unsubscribed');
                 setVideoTrack(null);
                 setShowTeacherVideo(false);
             }
@@ -57,10 +62,12 @@ export default function StudentVideoPanel() {
         teacherParticipant.on('trackSubscribed', handleTrackSubscribed);
         teacherParticipant.on('trackUnsubscribed', handleTrackUnsubscribed);
 
-        // Check for existing tracks (important for late joins)
+        // Late join: teacher already sharing — check existing subscribed tracks
         teacherParticipant.videoTrackPublications.forEach((pub) => {
-            if (pub.isSubscribed && pub.track) {
-                handleTrackSubscribed(pub.track);
+            if (pub.isSubscribed && pub.track && isLessonVideoTrack(pub.track)) {
+                console.log('🔄 Late join: found existing lesson video track');
+                setVideoTrack(pub.track);
+                setShowTeacherVideo(true); // Ensure viewer is visible on late join
             }
         });
 
@@ -70,33 +77,39 @@ export default function StudentVideoPanel() {
         };
     }, [teacherParticipant]);
 
-    /* ---------------- ATTACH VIDEO TRACK ---------------- */
+    /* ---------------- ATTACH VIDEO VIA srcObject ---------------- */
+    // ✅ Always runs because videoRef.current always exists (element never unmounts)
     useEffect(() => {
         const videoEl = videoRef.current;
-        if (!videoEl || !videoTrack) return;
+        if (!videoEl) return;
 
-        console.log('🔗 Attaching teacher video track to element');
-        videoTrack.attach(videoEl);
+        if (!videoTrack || !showTeacherVideo) {
+            // Clear the player when not in use
+            if (videoEl.srcObject) {
+                videoEl.pause();
+                videoEl.srcObject = null;
+            }
+            return;
+        }
+
+        const rawTrack = videoTrack.mediaStreamTrack;
+        if (!rawTrack) {
+            console.warn('⚠️ videoTrack has no mediaStreamTrack yet');
+            return;
+        }
+
+        console.log('🔗 Attaching lesson video via srcObject. Track state:', rawTrack.readyState);
+
+        const stream = new MediaStream([rawTrack]);
+        videoEl.srcObject = stream;
+        videoEl.muted = true; // keep muted for autoplay policy; audio handled by RoomAudioRenderer
+        videoEl.play().catch(e => console.warn('Autoplay blocked:', e));
 
         return () => {
-            console.log('🔓 Detaching teacher video track');
-            videoTrack.detach(videoEl);
+            videoEl.pause();
+            videoEl.srcObject = null;
         };
-    }, [videoTrack, showTeacherVideo]); // Re-run when videoTrack or showTeacherVideo changes
-
-    /* ---------------- TIME UPDATE ---------------- */
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video) return;
-
-        const update = () => {
-            setCurrentTime(video.currentTime);
-            setDuration(video.duration || 0);
-        };
-
-        video.addEventListener('timeupdate', update);
-        return () => video.removeEventListener('timeupdate', update);
-    }, []);
+    }, [videoTrack, showTeacherVideo]);
 
     /* ---------------- LIVEKIT SIGNALS ---------------- */
     useEffect(() => {
@@ -105,34 +118,27 @@ export default function StudentVideoPanel() {
         const handleData = payload => {
             try {
                 const msg = JSON.parse(new TextDecoder().decode(payload));
-                const video = videoRef.current;
 
-                if (msg.action === 'VIDEO_START' || msg.action === 'VIDEO_RESUME') {
+                if (msg.action === 'VIDEO_START') {
+                    console.log('📡 VIDEO_START — showing viewer, duration:', msg.duration);
                     setShowTeacherVideo(true);
+                    if (isFinite(msg.duration) && msg.duration > 0) setDuration(msg.duration);
                 }
 
-                if (!video) return;
+                if (msg.action === 'VIDEO_STOP') {
+                    console.log('📡 VIDEO_STOP — hiding viewer');
+                    setShowTeacherVideo(false);
+                    setVideoTrack(null);
+                    setCurrentTime(0);
+                    setDuration(0);
+                }
 
                 if (msg.action === 'VIDEO_TIME_UPDATE') {
-                    const drift = Math.abs(video.currentTime - msg.currentTime);
-                    if (drift > 0.5) {
-                        video.currentTime = msg.currentTime;
+                    setCurrentTime(msg.currentTime);
+                    if (isFinite(msg.duration) && msg.duration > 0) {
+                        setDuration(msg.duration);
+                        setShowTeacherVideo(true); // Safety: reveal if we missed the start event
                     }
-                    if (isFinite(msg.duration)) setDuration(msg.duration);
-                }
-
-                if (msg.action === 'VIDEO_PAUSE') {
-                    if (typeof msg.currentTime === 'number') {
-                        video.currentTime = msg.currentTime;
-                    }
-                    video.pause();
-                }
-
-                if (msg.action === 'VIDEO_RESUME') {
-                    if (typeof msg.currentTime === 'number') {
-                        video.currentTime = msg.currentTime;
-                    }
-                    video.play().catch(() => { });
                 }
             } catch { }
         };
@@ -141,34 +147,16 @@ export default function StudentVideoPanel() {
         return () => room.off('dataReceived', handleData);
     }, [room]);
 
-    /* ---------------- FULLSCREEN ---------------- */
-    useEffect(() => {
-        const fs = () => setIsFullscreen(!!document.fullscreenElement);
-        document.addEventListener('fullscreenchange', fs);
-        return () => document.removeEventListener('fullscreenchange', fs);
-    }, []);
-
-    const toggleFullscreen = () => {
-        if (!containerRef.current) return;
-
-        if (!document.fullscreenElement) {
-            containerRef.current.requestFullscreen().catch(() => { });
-        } else {
-            document.exitFullscreen();
-        }
-    };
-
     const formatTime = s => {
-        if (!isFinite(s)) return '0:00';
+        if (!isFinite(s) || s <= 0) return '0:00';
         const m = Math.floor(s / 60);
         const sec = Math.floor(s % 60);
         return `${m}:${sec.toString().padStart(2, '0')}`;
     };
 
-    if (!showTeacherVideo) {
-        return null; // Don't show anything (PageClientImpl handles empty state)
-    }
-
+    // ✅ ALWAYS render the container — hide via CSS (display:none), never unmount.
+    // This ensures videoRef.current always exists when the track subscription fires,
+    // preventing the timing race that caused the black screen.
     return (
         <div
             ref={containerRef}
@@ -179,11 +167,11 @@ export default function StudentVideoPanel() {
                 width: '100vw',
                 height: '90vh',
                 background: '#000',
-                zIndex: 1, // Slightly above base background
-                display: 'flex',
+                zIndex: 1,
+                display: showTeacherVideo ? 'flex' : 'none',
                 alignItems: 'center',
                 justifyContent: 'center',
-                overflow: 'hidden'
+                overflow: 'hidden',
             }}
         >
             <video
@@ -195,12 +183,11 @@ export default function StudentVideoPanel() {
                     width: '100%',
                     height: '100%',
                     objectFit: 'contain',
-                    background: '#000'
+                    background: '#000',
                 }}
-                onLoadedMetadata={() => console.log('🎬 Video metadata loaded')}
             />
 
-            {/* ⏱ Time overlay (Bottom Left, above control bar) */}
+            {/* ⏱ Time overlay */}
             <div style={{
                 position: 'absolute',
                 bottom: 4,

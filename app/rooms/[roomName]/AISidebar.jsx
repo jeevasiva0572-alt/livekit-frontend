@@ -1,12 +1,23 @@
 'use client';
 import { useState } from 'react';
 
-function PendingDoubtItem({ d, loadingAI, onAskAI, onSendToStudent, onUpdateDoubt, onResolve }) {
+function PendingDoubtItem({ d, loadingAI, onAskAI, onSendToStudent, onEditStart, onSaveDoubt, onResolve }) {
     const [isEditing, setIsEditing] = useState(false);
     const [editedText, setEditedText] = useState(d.text);
 
+    const handleEditClick = () => {
+        setIsEditing(true);
+        if (onEditStart) onEditStart(d.id); // ✅ Freeze auto-timer
+    };
+
     const handleSave = () => {
-        onUpdateDoubt(d.id, editedText);
+        if (onSaveDoubt) onSaveDoubt(d.id, editedText); // ✅ Unfreeze + 5s auto-ask
+        setIsEditing(false);
+    };
+
+    const handleCancel = () => {
+        setEditedText(d.text); // Reset text
+        if (onSaveDoubt) onSaveDoubt(d.id, d.text); // ✅ Unfreeze with original text
         setIsEditing(false);
     };
 
@@ -22,7 +33,7 @@ function PendingDoubtItem({ d, loadingAI, onAskAI, onSendToStudent, onUpdateDoub
             <div style={{ fontSize: '0.8rem', color: '#2196F3', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <b>{d.name}</b> asked:
                 {!isEditing && !d.answer && !d.isBroadcasting && (
-                    <button onClick={() => setIsEditing(true)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.75rem', textDecoration: 'underline' }}>Edit</button>
+                    <button onClick={handleEditClick} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.75rem', textDecoration: 'underline' }}>Edit</button>
                 )}
             </div>
 
@@ -39,7 +50,7 @@ function PendingDoubtItem({ d, loadingAI, onAskAI, onSendToStudent, onUpdateDoub
                     />
                     <div style={{ display: 'flex', gap: '8px' }}>
                         <button onClick={handleSave} style={{ flex: 1, padding: '6px', borderRadius: '4px', border: 'none', background: '#4CAF50', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}>Save</button>
-                        <button onClick={() => setIsEditing(false)} style={{ flex: 1, padding: '6px', borderRadius: '4px', border: 'none', background: '#333', color: '#fff', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
+                        <button onClick={handleCancel} style={{ flex: 1, padding: '6px', borderRadius: '4px', border: 'none', background: '#333', color: '#fff', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
                     </div>
                 </div>
             ) : (
@@ -111,6 +122,8 @@ export default function AISidebar({
     onAskAI,
     onSendToStudent,
     onStopAudio,
+    onEditStart,
+    onSaveDoubt,
     onUpdateDoubt,
     onResolve,
     onClose,
@@ -182,7 +195,8 @@ export default function AISidebar({
                                     loadingAI={loadingAI}
                                     onAskAI={onAskAI}
                                     onSendToStudent={onSendToStudent}
-                                    onUpdateDoubt={onUpdateDoubt}
+                                    onEditStart={onEditStart}
+                                    onSaveDoubt={onSaveDoubt}
                                     onResolve={onResolve}
                                 />
                             ))
